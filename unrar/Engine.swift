@@ -12,13 +12,27 @@ public func ArchiveKitRegisterUnrarEngine() {
     CompressionEngineRegistry.shared.register(engine: Engine())
 }
 
+extension Unrar.Entry {
+    func toUnarchiverEntry() -> UnarchiverEntry {
+        UnarchiverEntry(filePath: fileName,
+                        isDirectory: false,
+                        creationDate: creation,
+                        modificationDate: modified,
+                        crc32: crc32,
+                        uncompressedSize: uncompressedSize,
+                        compressedSize: compressedSize,
+                        encrypted: encrypted,
+                        compressionMethod: 0)
+    }
+}
+
 public class Engine: CompressionEngine {
     public init() {
     }
 
     public func listContents(archiveFile: URL, password: String?) async throws -> [UnarchiverEntry] {
         let archive = try Archive(path: archiveFile.path, password: password)
-        return try archive.entries().map({ UnarchiverEntry(filePath: $0.fileName, isDirectory: false, creationDate: $0.creation, modificationDate: $0.modified, crc32: $0.crc32, uncompressedSize: $0.uncompressedSize, compressedSize: $0.compressedSize, encrypted: $0.encrypted, compressionMethod: 0) })
+        return try archive.entries().map({ $0.toUnarchiverEntry() })
     }
 
     public var supportedCompressFormats: Set<CompressionFormat> = Set()
@@ -53,18 +67,21 @@ class UncompressHandler: DecompressHandle {
         self.options = options
     }
 
-    func decompress(ignoreEntrys: [UnarchiverEntry]?) async throws {
-        let ignoreSet: Set<String> = Set(ignoreEntrys?.flatMap({ $0.filePath }) ?? [])
+    func decompress(ignoreEntrys: [UnarchiverEntry]?) async throws -> [(UnarchiverEntry, URL)] {
+        var result: [(UnarchiverEntry, URL)] = [(UnarchiverEntry, URL)]()
+        let ignoreSet: Set<String> = Set(ignoreEntrys?.compactMap({ $0.filePath }) ?? [])
         let archive = self.archive
         let options = self.options
         let progress = self.progress
-        try await withUnsafeThrowingContinuation { cc in
+        _ = try await withUnsafeThrowingContinuation { cc in
             DispatchQueue.global().async {
                 do {
                     for entry in try archive.entries() {
                         if ignoreSet.contains(entry.fileName) {
                             continue
                         }
+                        let dest = options.destinationDirectory.appendingPathComponent(entry.fileName)
+                        result.append((entry.toUnarchiverEntry(),dest))
                         try UncompressHandler.extra(options: options, archive: archive, entry: entry, progress: progress)
                     }
                     cc.resume(returning: true)
@@ -73,6 +90,7 @@ class UncompressHandler: DecompressHandle {
                 }
             }
         }
+        return result
     }
 
     static func extra(options: DecompressionOptions, archive: Archive, entry: Entry, progress: Progress) throws {
