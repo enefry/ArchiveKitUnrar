@@ -26,7 +26,7 @@ extension Unrar.Entry {
     }
 }
 
-public class Engine: CompressionEngine {
+public final class Engine: CompressionEngine {
     public init() {
     }
 
@@ -35,8 +35,8 @@ public class Engine: CompressionEngine {
         return try archive.entries().map({ $0.toUnarchiverEntry() })
     }
 
-    public var supportedCompressFormats: Set<CompressionFormat> = Set()
-    public var supportedUncompressFormats: Set<CompressionFormat> = Set(arrayLiteral: .rar)
+    public let supportedCompressFormats: Set<CompressionFormat> = Set()
+    public let supportedUncompressFormats: Set<CompressionFormat> = Set(arrayLiteral: .rar)
 
     public func openCompress(options: CompressionOptions) async throws -> any CompressHandle {
         throw ArchiveError.unsupportFeature
@@ -76,13 +76,13 @@ class UncompressHandler: DecompressHandle {
         _ = try await withUnsafeThrowingContinuation { cc in
             DispatchQueue.global().async {
                 do {
-                    for entry in try archive.entries() {
+                    let destinationDirectory = options.destinationDirectory.path
+                    try archive.extract(destPath: destinationDirectory, progress: progress) { entry in
                         if ignoreSet.contains(entry.fileName) {
-                            continue
+                            return .skip
+                        } else {
+                            return .destDirectory(destinationDirectory)
                         }
-                        let dest = options.destinationDirectory.appendingPathComponent(entry.fileName)
-                        result.append((entry.toUnarchiverEntry(),dest))
-                        try UncompressHandler.extra(options: options, archive: archive, entry: entry, progress: progress)
                     }
                     cc.resume(returning: true)
                 } catch {
@@ -91,36 +91,5 @@ class UncompressHandler: DecompressHandle {
             }
         }
         return result
-    }
-
-    static func extra(options: DecompressionOptions, archive: Archive, entry: Entry, progress: Progress) throws {
-        if entry.fileName.contains("../") {
-            return
-        }
-        /// 文件夹
-        if entry.directory {
-            if options.createSubfolder {
-                try FileManager.default.createDirectory(at: options.destinationDirectory.appendingPathComponent(entry.fileName), withIntermediateDirectories: true)
-            }
-            return
-        }
-        /// 文件
-        let fileName = entry.fileName
-        progress.fileURL = URL(fileURLWithPath: fileName)
-        progress.totalUnitCount = Int64(entry.uncompressedSize)
-        let fileHandle: FileHandle
-        if options.createSubfolder {
-            fileHandle = try FileHandle(forWritingTo: options.destinationDirectory.appendingPathComponent(entry.fileName))
-        } else {
-            fileHandle = try FileHandle(forWritingTo: options.destinationDirectory.appendingPathComponent(URL(fileURLWithPath: entry.fileName).lastPathComponent))
-        }
-        defer {
-            try? fileHandle.close()
-        }
-        var extraError: (any Error)?
-        if let extraError = extraError {
-            throw extraError
-        }
-        progress.completedUnitCount = Int64(entry.uncompressedSize)
     }
 }
