@@ -13,7 +13,7 @@ let package = Package(
     .library(name: "ArchiveKitUnrar", targets: ["ArchiveKitUnrar"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/enefry/ArchiveKit", branch: "master"),
+    .package(path: "../ArchiveKit"),
     .package(url: "https://github.com/enefry/LoggerProxy.git", from: "2.0.0"),
     .package(url: "https://github.com/enefry/UnrarLib.git", branch: "main"),
   ],
